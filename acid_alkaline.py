@@ -3,6 +3,7 @@ import time
 import os
 import json
 from PIL import Image, ImageDraw
+import google.generativeai as genai
 
 # --- 이미지 생성 함수 ---
 def create_images_if_needed():
@@ -42,12 +43,33 @@ def save_results(results):
     with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
+# --- AI 모델 설정 함수 ---
+def configure_ai():
+    """API 키를 사용하여 Gemini 모델을 설정합니다."""
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction="당신은 초등학생을 위한 친절하고 이해하기 쉬운 과학 선생님입니다. 모든 답변은 한국어로, 존댓말로 작성해주세요."
+        )
+        return model
+    except Exception as e:
+        # st.secrets에 키가 없거나 잘못된 경우
+        return None
+
 # --- 1. 페이지 기본 설정 및 초기화 ---
 st.set_page_config(
     page_title="AI 산-염기 탐구 실험실",
     page_icon="🧪",
     layout="wide"
 )
+
+# AI 모델 설정
+ai_model = configure_ai()
+
+# 채팅 기록 초기화
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 # 세션 상태 초기화
 if 'current_experiment' not in st.session_state:
@@ -176,3 +198,32 @@ with res_col1:
 with res_col2:
     st.subheader("🔵 염기성 용액")
     st.dataframe(results["염기성"], use_container_width=True)
+
+# --- 5. AI 과학자에게 질문하기 ---
+st.markdown("---")
+st.header("👩‍🔬 AI 과학자에게 질문하기")
+
+if ai_model:
+    # 이전 대화 내용 표시
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 사용자 입력 받기
+    if prompt := st.chat_input("과학에 대해 궁금한 점을 물어보세요! (예: 왜 비눗물은 미끌거려요?)"):
+        # 사용자 메시지 기록 및 표시
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # AI 응답 생성 및 표시
+        with st.chat_message("assistant"):
+            with st.spinner("AI 과학자 선생님이 답변을 생각하고 있어요..."):
+                response = ai_model.generate_content(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+        
+        # AI 응답 기록
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
+else:
+    st.warning("AI 모델을 불러올 수 없습니다. `.streamlit/secrets.toml` 파일에 API 키를 올바르게 설정했는지 확인해주세요.")
