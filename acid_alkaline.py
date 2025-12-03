@@ -122,14 +122,34 @@ with col2:
         if not solution_name:
             st.warning("어떤 용액으로 실험할지 입력해주세요!")
         else:
-            with st.spinner(f"'{solution_name}' 용액으로 실험 중... 잠시만 기다려주세요..."):
-                time.sleep(1.5) # 실험하는 것처럼 보이게 잠시 대기
-            
+            property = SOLUTION_DATA.get(solution_name)
+
+            # 1. AI의 지식 데이터에 없는 경우, Gemini에게 물어보기
+            if property is None:
+                if ai_model:
+                    with st.spinner(f"AI가 '{solution_name}'에 대해 학습한 내용을 찾고 있어요..."):
+                        # AI에게 단답형으로 질문하여 결과를 얻음
+                        prompt = f"'{solution_name}'은(는) '산성', '염기성', '중성' 중 무엇에 해당하나요? 다른 설명 없이 '산성', '염기성', '중성' 중 하나로만 대답해주세요."
+                        try:
+                            response = ai_model.generate_content(prompt)
+                            cleaned_response = response.text.strip()
+
+                            if cleaned_response in ["산성", "염기성", "중성"]:
+                                property = cleaned_response
+                                # 학습한 내용을 SOLUTION_DATA에 추가 (선택적)
+                                SOLUTION_DATA[solution_name] = property
+                            else:
+                                property = "알 수 없음"
+                        except Exception:
+                            property = "알 수 없음"
+                else:
+                    property = "알 수 없음"
+
             # 현재 실험 정보를 세션 상태에 저장
             st.session_state.current_experiment = {
                 "name": solution_name,
                 "indicator": indicator,
-                "property": SOLUTION_DATA.get(solution_name, "알 수 없음")
+                "property": property
             }
 
     # 2. 세션 상태에 저장된 실험 정보가 있으면 결과 표시
