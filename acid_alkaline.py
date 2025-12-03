@@ -201,26 +201,28 @@ with col2:
         st.info("왼쪽에서 실험할 용액을 입력하고 '실험 시작' 버튼을 눌러주세요.")
 
 # --- 4. 우리 반 전체 실험 결과 ---
-st.header("📊 활동 2: 우리 반 전체 실험 결과")
+st.header("📊 활동 2: 우리 반 전체 실험 결과 (교사용)")
 
-with st.expander("⚙️ 관리자 기능 (교사용)"):
+with st.expander("⚙️ 관리자 기능 및 전체 결과 보기 (클릭하여 열기)"):
     if st.button("⚠️ 모든 실험 결과 초기화하기"):
         save_results({"산성": [], "염기성": []})
         st.success("모든 실험 결과가 초기화되었습니다. 페이지를 새로고침합니다.")
         time.sleep(2)
         st.rerun()
+    
+    st.markdown("---")
+    st.subheader("전체 실험 결과 목록")
 
+    results = load_results()
 
-results = load_results()
+    res_col1, res_col2 = st.columns(2)
+    with res_col1:
+        st.subheader("🔴 산성 용액")
+        st.dataframe(results["산성"], use_container_width=True)
 
-res_col1, res_col2 = st.columns(2)
-with res_col1:
-    st.subheader("🔴 산성 용액")
-    st.dataframe(results["산성"], use_container_width=True)
-
-with res_col2:
-    st.subheader("🔵 염기성 용액")
-    st.dataframe(results["염기성"], use_container_width=True)
+    with res_col2:
+        st.subheader("🔵 염기성 용액")
+        st.dataframe(results["염기성"], use_container_width=True)
 
 # --- 5. AI 과학자에게 질문하기 ---
 st.header("👩‍🔬 활동 3: AI 과학자에게 질문하기")
