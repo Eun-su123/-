@@ -30,6 +30,7 @@ def create_images_if_needed():
 
 # --- 데이터 저장/로드 함수 ---
 RESULTS_FILE = "results.json"
+CHAT_LOG_FILE = "chat_log.json"
 
 def load_results():
     """JSON 파일에서 실험 결과를 불러옵니다."""
@@ -42,6 +43,18 @@ def save_results(results):
     """실험 결과를 JSON 파일에 저장합니다."""
     with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
+
+def load_chat_log():
+    """JSON 파일에서 채팅 기록을 불러옵니다."""
+    if os.path.exists(CHAT_LOG_FILE):
+        with open(CHAT_LOG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return []
+
+def save_chat_log(log):
+    """채팅 기록을 JSON 파일에 저장합니다."""
+    with open(CHAT_LOG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(log, f, ensure_ascii=False, indent=2)
 
 # --- AI 모델 설정 함수 ---
 def configure_ai():
@@ -203,26 +216,41 @@ with col2:
 # --- 4. 우리 반 전체 실험 결과 ---
 st.header("📊 활동 2: 우리 반 전체 실험 결과 (교사용)")
 
-with st.expander("⚙️ 관리자 기능 및 전체 결과 보기 (클릭하여 열기)"):
-    if st.button("⚠️ 모든 실험 결과 초기화하기"):
-        save_results({"산성": [], "염기성": []})
-        st.success("모든 실험 결과가 초기화되었습니다. 페이지를 새로고침합니다.")
-        time.sleep(2)
-        st.rerun()
+with st.expander("⚙️ 관리자 페이지 (클릭하여 열기)"):
+    tab1, tab2 = st.tabs(["실험 결과", "학생 질문 목록"])
+
+    with tab1:
+        st.subheader("전체 실험 결과 목록")
+        if st.button("⚠️ 모든 실험 결과 초기화하기"):
+            save_results({"산성": [], "염기성": []})
+            st.success("모든 실험 결과가 초기화되었습니다. 페이지를 새로고침합니다.")
+            time.sleep(2)
+            st.rerun()
+
+        results = load_results()
+        res_col1, res_col2 = st.columns(2)
+        with res_col1:
+            st.subheader("🔴 산성 용액")
+            st.dataframe(results["산성"], use_container_width=True)
+        with res_col2:
+            st.subheader("🔵 염기성 용액")
+            st.dataframe(results["염기성"], use_container_width=True)
     
-    st.markdown("---")
-    st.subheader("전체 실험 결과 목록")
+    with tab2:
+        st.subheader("AI에게 한 질문 전체 목록")
+        if st.button("⚠️ 모든 질문 기록 초기화하기"):
+            save_chat_log([])
+            st.success("모든 질문 기록이 초기화되었습니다. 페이지를 새로고침합니다.")
+            time.sleep(2)
+            st.rerun()
 
-    results = load_results()
-
-    res_col1, res_col2 = st.columns(2)
-    with res_col1:
-        st.subheader("🔴 산성 용액")
-        st.dataframe(results["산성"], use_container_width=True)
-
-    with res_col2:
-        st.subheader("🔵 염기성 용액")
-        st.dataframe(results["염기성"], use_container_width=True)
+        chat_log = load_chat_log()
+        if not chat_log:
+            st.info("아직 학생들이 질문한 기록이 없습니다.")
+        for i, entry in enumerate(reversed(chat_log)): # 최신 질문이 위로 오도록
+            st.markdown(f"**Q{len(chat_log)-i}. {entry['question']}** (_{entry['timestamp']}_)")
+            st.markdown(f"> A. {entry['answer']}")
+            st.markdown("---")
 
 # --- 5. AI 과학자에게 질문하기 ---
 st.header("👩‍🔬 활동 3: AI 과학자에게 질문하기")
@@ -249,5 +277,14 @@ if ai_model:
         
         # AI 응답 기록
         st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+        # 전체 채팅 로그에 현재 대화 저장
+        chat_log = load_chat_log()
+        chat_log.append({
+            "question": prompt,
+            "answer": response_text,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        save_chat_log(chat_log)
 else:
     st.warning("AI 모델을 불러올 수 없습니다. `.streamlit/secrets.toml` 파일에 API 키를 올바르게 설정했는지 확인해주세요.")
