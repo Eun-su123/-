@@ -188,6 +188,14 @@ with col2:
 st.markdown("---")
 st.header("📊 우리 반 전체 실험 결과")
 
+with st.expander("⚙️ 관리자 기능 (교사용)"):
+    if st.button("⚠️ 모든 실험 결과 초기화하기"):
+        save_results({"산성": [], "염기성": []})
+        st.success("모든 실험 결과가 초기화되었습니다. 페이지를 새로고침합니다.")
+        time.sleep(2)
+        st.rerun()
+
+
 results = load_results()
 
 res_col1, res_col2 = st.columns(2)
