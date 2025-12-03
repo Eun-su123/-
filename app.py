@@ -1,236 +1,290 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import time
+import os
+import json
+from PIL import Image, ImageDraw
+import google.generativeai as genai
 
-st.title('My First Streamlit App')
+# --- 이미지 생성 함수 ---
+def create_images_if_needed():
+    """필요한 이미지 파일이 없으면 생성합니다."""
+    image_dir = "images"
+    os.makedirs(image_dir, exist_ok=True)
 
-# CSS와 JavaScript를 추가하여 풍선 애니메이션 효과 만들기
-st.markdown("""
-<style>
-.balloon {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 30px;
-    transition: all 3s ease-out;
-    z-index: 1000;
-    opacity: 1;
-}
-
-.balloon.fly {
-    bottom: 100vh;
-    opacity: 0;
-}
-
-.balloon-container {
-    position: relative;
-    height: 200px;
-    margin: 20px 0;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# 풍선 애니메이션을 위한 JavaScript
-st.markdown("""
-<script>
-function createBalloon() {
-    const balloon = document.createElement('div');
-    balloon.className = 'balloon';
-    balloon.innerHTML = '🎈';
-    balloon.style.left = Math.random() * 80 + 10 + '%';
-    document.body.appendChild(balloon);
-    
-    setTimeout(() => {
-        balloon.classList.add('fly');
-    }, 100);
-    
-    setTimeout(() => {
-        balloon.remove();
-    }, 3000);
-}
-</script>
-""", unsafe_allow_html=True)
-
-st.write('Here\'s our first attempt at using data to create a table.')
-st.write(pd.DataFrame({
-    'first column':[1, 2, 3, 4],
-    'second column':[10, 20, 30, 40]
-}))
-
-# 곰돌이 효과를 위한 CSS 추가
-st.markdown("""
-<style>
-.bear-container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1000;
-}
-
-.bear {
-    position: absolute;
-    font-size: 40px;
-    animation: bearFall 3s linear forwards;
-    pointer-events: none;
-}
-
-@keyframes bearFall {
-    0% {
-        top: -50px;
-        transform: rotate(0deg);
+    # 이미지 정보: 파일명, 배경색, 텍스트, 텍스트 색
+    images_to_create = {
+        "litmus_red.png": ("#FF5733", "붉게 변함", "white"),
+        "litmus_blue.png": ("#335BFF", "푸르게 변함", "white"),
+        "phenol_colorless.png": ("#E0E0E0", "변화 없음", "black"),
+        "phenol_red.png": ("#FF33A1", "붉게 변함", "white"),
     }
-    50% {
-        transform: rotate(180deg);
-    }
-    100% {
-        top: 100vh;
-        transform: rotate(360deg);
-    }
+
+    for filename, (color, text, text_color) in images_to_create.items():
+        filepath = os.path.join(image_dir, filename)
+        if not os.path.exists(filepath):
+            img = Image.new('RGB', (200, 200), color=color)
+            draw = ImageDraw.Draw(img)
+            # 중앙에 텍스트 추가 (폰트 미지정으로 기본 폰트 사용)
+            draw.text((50, 90), text, fill=text_color)
+            img.save(filepath)
+
+# --- 데이터 저장/로드 함수 ---
+RESULTS_FILE = "results.json"
+CHAT_LOG_FILE = "chat_log.json"
+
+def load_results():
+    """JSON 파일에서 실험 결과를 불러옵니다."""
+    if os.path.exists(RESULTS_FILE):
+        with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"산성": [], "염기성": []}
+
+def save_results(results):
+    """실험 결과를 JSON 파일에 저장합니다."""
+    with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+def load_chat_log():
+    """JSON 파일에서 채팅 기록을 불러옵니다."""
+    if os.path.exists(CHAT_LOG_FILE):
+        with open(CHAT_LOG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return []
+
+def save_chat_log(log):
+    """채팅 기록을 JSON 파일에 저장합니다."""
+    with open(CHAT_LOG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(log, f, ensure_ascii=False, indent=2)
+
+# --- AI 모델 설정 함수 ---
+def configure_ai():
+    """API 키를 사용하여 Gemini 모델을 설정합니다."""
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction="당신은 초등학생을 위한 친절하고 이해하기 쉬운 과학 선생님입니다. 모든 답변은 한국어로, 존댓말로 작성해주세요."
+        )
+        return model
+    except Exception as e:
+        # st.secrets에 키가 없거나 잘못된 경우
+        return None
+
+# --- 1. 페이지 기본 설정 및 초기화 ---
+st.set_page_config(
+    page_title="AI 산-염기 탐구 실험실",
+    page_icon="🧪",
+    layout="wide"
+)
+
+# AI 모델 설정
+ai_model = configure_ai()
+
+# 채팅 기록 초기화
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# 세션 상태 초기화
+if 'current_experiment' not in st.session_state:
+    st.session_state.current_experiment = None
+
+# 앱 실행 시 이미지 생성 함수 호출
+create_images_if_needed()
+
+# --- AI의 지식 데이터 (간단한 딕셔너리) ---
+SOLUTION_DATA = {
+    "레몬즙": "산성", "식초": "산성", "사이다": "산성", "탄산수": "산성", "염산": "산성",
+    "비눗물": "염기성", "치약": "염기성", "유리세정제": "염기성", "수산화나트륨": "염기성", "석회수": "염기성",
+    "물": "중성", "소금물": "중성"
 }
 
-.bear-bounce {
-    animation: bearBounce 0.5s ease-in-out;
-}
+# --- 2. 앱 제목 및 설명 ---
+st.title("🧪 AI 산-염기 탐구 실험실")
+st.markdown("### 궁금한 용액을 AI와 함께 탐구해보고 산성인지 염기성인지 알아봅시다!")
 
-@keyframes bearBounce {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.2); }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# 곰돌이 생성 JavaScript
-st.markdown("""
-<script>
-function createBears() {
-    const bearContainer = document.createElement('div');
-    bearContainer.className = 'bear-container';
-    document.body.appendChild(bearContainer);
-    
-    // 여러 마리의 곰돌이 생성
-    for (let i = 0; i < 15; i++) {
-        setTimeout(() => {
-            const bear = document.createElement('div');
-            bear.className = 'bear';
-            bear.innerHTML = '🐻';
-            bear.style.left = Math.random() * 90 + 5 + '%';
-            bear.style.animationDelay = Math.random() * 0.5 + 's';
-            bearContainer.appendChild(bear);
-        }, i * 100);
-    }
-    
-    // 3초 후 곰돌이들 제거
-    setTimeout(() => {
-        bearContainer.remove();
-    }, 4000);
-}
-</script>
-""", unsafe_allow_html=True)
-
-# 꿀 찾기 게임을 위한 세션 상태 초기화
-if 'honey_found' not in st.session_state:
-    st.session_state.honey_found = False
-if 'honey_position' not in st.session_state:
-    st.session_state.honey_position = None
-if 'game_started' not in st.session_state:
-    st.session_state.game_started = False
-if 'clicked_cells' not in st.session_state:
-    st.session_state.clicked_cells = []
-
-# 꿀 찾기 게임 함수
-def create_honey_game():
-    import random
-    st.session_state.honey_position = random.randint(1, 60)
-    st.session_state.honey_found = False
-    st.session_state.game_started = True
-    st.session_state.clicked_cells = []
-
-# 버튼들
-col1, col2, col3 = st.columns(3)
+# --- 3. 가상 실험실 화면 구성 ---
+st.header("🔬 활동 1: 가상 실험하기")
+col1, col2 = st.columns([2, 1.5])
 
 with col1:
-    if st.button('🎈 풍선 날리기!', key='balloon_button'):
-        st.balloons()
-        st.success('풍선이 날아갔습니다! 🎈✨')
+    st.subheader("📋 실험 준비")
+    
+    # 1. 용액 이름 입력받기
+    solution_name = st.text_input(
+        "어떤 용액을 실험해볼까요?",
+        placeholder="예: 레몬즙, 비눗물, 사이다"
+    )
+
+    # 2. 지시약 선택하기
+    indicator = st.selectbox(
+        "어떤 지시약을 사용하겠어요?",
+        ("리트머스 종이", "페놀프탈레인 용액")
+    )
+
+    # 3. 실험 시작 버튼
+    start_button = st.button("💧 실험 시작!")
 
 with col2:
-    if st.button('🐻 곰돌이 대방출!', key='bear_button'):
-        # 곰돌이 효과 JavaScript 실행
-        st.markdown("""
-        <script>
-        createBears();
-        </script>
-        """, unsafe_allow_html=True)
-        
-        # 곰돌이 이모지로 채우기
-        st.markdown("🐻 " * 20)
-        st.markdown("🐻 " * 20)
-        st.markdown("🐻 " * 20)
-        
-        st.success('곰돌이들이 쏟아졌습니다! 🐻🐻🐻')
-        st.balloons()  # 추가 효과
-
-with col3:
-    if st.button('🍯 꿀 찾기 게임!', key='honey_button'):
-        create_honey_game()
-        st.success('곰돌이들 사이에 꿀이 숨어있어요! 찾아보세요! 🍯🐻')
-        st.rerun()
-
-# 꿀 찾기 게임
-if st.session_state.game_started and st.session_state.honey_position is not None:
-    st.markdown("### 🍯 꿀 찾기 게임")
-    st.markdown("곰돌이들 사이에 숨어있는 꿀을 찾아보세요!")
+    st.subheader("📊 실험 결과")
     
-    # 6x10 그리드로 곰돌이들 표시
-    st.markdown("**곰돌이들을 클릭해서 꿀을 찾아보세요!**")
-    
-    # 그리드 생성
-    for row in range(6):
-        cols = st.columns(10)
-        for col in range(10):
-            cell_num = row * 10 + col + 1
-            with cols[col]:
-                if cell_num == st.session_state.honey_position:
-                    if st.button('🍯', key=f'honey_{cell_num}', help='꿀을 찾았어요!'):
-                        st.session_state.honey_found = True
-                        st.session_state.game_started = False
-                        st.rerun()
+    # 1. '실험 시작' 버튼을 눌렀을 때의 로직
+    if start_button:
+        if not solution_name:
+            st.warning("어떤 용액으로 실험할지 입력해주세요!")
+        else:
+            property = SOLUTION_DATA.get(solution_name)
+
+            # 1. AI의 지식 데이터에 없는 경우, Gemini에게 물어보기
+            if property is None:
+                if ai_model:
+                    with st.spinner(f"AI가 '{solution_name}'에 대해 학습한 내용을 찾고 있어요..."):
+                        # AI에게 단답형으로 질문하여 결과를 얻음
+                        prompt = f"'{solution_name}'은(는) '산성', '염기성', '중성' 중 무엇에 해당하나요? 다른 설명 없이 '산성', '염기성', '중성' 중 하나로만 대답해주세요."
+                        try:
+                            response = ai_model.generate_content(prompt)
+                            cleaned_response = response.text.strip()
+
+                            if cleaned_response in ["산성", "염기성", "중성"]:
+                                property = cleaned_response
+                                # 학습한 내용을 SOLUTION_DATA에 추가 (선택적)
+                                SOLUTION_DATA[solution_name] = property
+                            else:
+                                property = "알 수 없음"
+                        except Exception:
+                            property = "알 수 없음"
                 else:
-                    if st.button('🐻', key=f'bear_{cell_num}', help='곰돌이입니다'):
-                        if cell_num not in st.session_state.clicked_cells:
-                            st.session_state.clicked_cells.append(cell_num)
-                            st.warning('곰돌이를 찾았어요! 꿀을 계속 찾아보세요! 🐻')
-                            st.rerun()
-                        else:
-                            st.info('이미 확인한 곳이에요! 다른 곳을 찾아보세요!')
+                    property = "알 수 없음"
 
-# 꿀을 찾았을 때의 칭찬 효과
-if st.session_state.honey_found:
-    st.markdown("---")
-    st.markdown("## 🎉 축하합니다! 꿀을 찾았어요! 🍯✨")
+            # 현재 실험 정보를 세션 상태에 저장
+            st.session_state.current_experiment = {
+                "name": solution_name,
+                "indicator": indicator,
+                "property": property
+            }
+
+    # 2. 세션 상태에 저장된 실험 정보가 있으면 결과 표시
+    if st.session_state.current_experiment:
+        exp = st.session_state.current_experiment
+        prop = exp["property"]
+        
+        st.success(f"'{exp['name']}' 실험 완료!")
+        
+        # 지시약과 용액 성질에 따라 결과 표시
+        if exp["indicator"] == "리트머스 종이":
+            if prop == "산성": st.image("images/litmus_red.png", caption="푸른색 리트머스 종이가 붉게 변했어요!")
+            elif prop == "염기성": st.image("images/litmus_blue.png", caption="붉은색 리트머스 종이가 푸르게 변했어요!")
+            elif prop == "중성": st.info("리트머스 종이의 색이 변하지 않았어요.")
+            else: st.error("처음 보는 용액이라 결과를 알 수 없어요! 😥")
+        
+        elif exp["indicator"] == "페놀프탈레인 용액":
+            if prop in ["산성", "중성"]: st.image("images/phenol_colorless.png", caption="페놀프탈레인 용액의 색이 변하지 않았어요.")
+            elif prop == "염기성": st.image("images/phenol_red.png", caption="페놀프탈레인 용액이 붉게 변했어요!")
+            else: st.error("처음 보는 용액이라 결과를 알 수 없어요! 😥")
+
+        # 3. 학생의 판단 입력받기
+        if prop != "알 수 없음":
+            st.subheader("🤔 이 용액은 무엇일까요?")
+            
+            student_choice = st.radio(
+                "실험 결과를 보고 용액의 성질을 선택해주세요.",
+                ("산성", "염기성", "중성"), 
+                key=f"choice_{exp['name']}" # 용액마다 다른 키를 부여
+            )
+            
+            if st.button("결과 기록하기", key=f"submit_{exp['name']}"):
+                if student_choice == prop:
+                    st.success(f"정답이에요! '{exp['name']}'은(는) '{prop}'이 맞아요!")
+                    st.balloons()
+                    
+                    # 결과 저장
+                    results = load_results()
+                    if prop in results and exp['name'] not in results[prop]:
+                        results[prop].append(exp['name'])
+                        save_results(results)
+                        st.info("우리 반 실험 결과에 기록되었어요!")
+
+                else:
+                    st.error(f"아쉬워요. 이 용액은 '{prop}'이에요. 다시 한번 생각해볼까요?")
+                
+                # 현재 실험 초기화
+                st.session_state.current_experiment = None
+                time.sleep(2)
+                st.rerun() # 화면 새로고침
+    else:
+        st.info("왼쪽에서 실험할 용액을 입력하고 '실험 시작' 버튼을 눌러주세요.")
+
+# --- 4. 우리 반 전체 실험 결과 ---
+st.header("📊 활동 2: 우리 반 전체 실험 결과 (교사용)")
+
+with st.expander("⚙️ 관리자 페이지 (클릭하여 열기)"):
+    tab1, tab2 = st.tabs(["실험 결과", "학생 질문 목록"])
+
+    with tab1:
+        st.subheader("전체 실험 결과 목록")
+        if st.button("⚠️ 모든 실험 결과 초기화하기"):
+            save_results({"산성": [], "염기성": []})
+            st.success("모든 실험 결과가 초기화되었습니다. 페이지를 새로고침합니다.")
+            time.sleep(2)
+            st.rerun()
+
+        results = load_results()
+        res_col1, res_col2 = st.columns(2)
+        with res_col1:
+            st.subheader("🔴 산성 용액")
+            st.dataframe(results["산성"], use_container_width=True)
+        with res_col2:
+            st.subheader("🔵 염기성 용액")
+            st.dataframe(results["염기성"], use_container_width=True)
     
-    # 칭찬 메시지들
-    praise_messages = [
-        "와! 꿀을 찾았어요! 🍯✨",
-        "대단해요! 곰돌이가 좋아할 거예요! 🐻💕", 
-        "꿀을 찾는 실력이 최고예요! 🏆",
-        "곰돌이들이 당신을 칭찬하고 있어요! 🐻👏",
-        "꿀 찾기 마스터! 🍯🎉"
-    ]
-    
-    import random
-    selected_message = random.choice(praise_messages)
-    st.success(f"**{selected_message}**")
-    
-    # 풍선 효과
-    st.balloons()
-    
-    # 다시 게임하기 버튼
-    if st.button('🔄 다시 게임하기', key='reset_game'):
-        create_honey_game()
-        st.rerun()
+    with tab2:
+        st.subheader("AI에게 한 질문 전체 목록")
+        if st.button("⚠️ 모든 질문 기록 초기화하기"):
+            save_chat_log([])
+            st.success("모든 질문 기록이 초기화되었습니다. 페이지를 새로고침합니다.")
+            time.sleep(2)
+            st.rerun()
+
+        chat_log = load_chat_log()
+        if not chat_log:
+            st.info("아직 학생들이 질문한 기록이 없습니다.")
+        for i, entry in enumerate(reversed(chat_log)): # 최신 질문이 위로 오도록
+            st.markdown(f"**Q{len(chat_log)-i}. {entry['question']}** (_{entry['timestamp']}_)")
+            st.markdown(f"> A. {entry['answer']}")
+            st.markdown("---")
+
+# --- 5. AI 과학자에게 질문하기 ---
+st.header("👩‍🔬 활동 3: AI 과학자에게 질문하기")
+
+if ai_model:
+    # 이전 대화 내용 표시
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 사용자 입력 받기
+    if prompt := st.chat_input("과학에 대해 궁금한 점을 물어보세요! (예: 왜 비눗물은 미끌거려요?)"):
+        # 사용자 메시지 기록 및 표시
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # AI 응답 생성 및 표시
+        with st.chat_message("assistant"):
+            with st.spinner("AI 과학자 선생님이 답변을 생각하고 있어요..."):
+                response = ai_model.generate_content(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+        
+        # AI 응답 기록
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+        # 전체 채팅 로그에 현재 대화 저장
+        chat_log = load_chat_log()
+        chat_log.append({
+            "question": prompt,
+            "answer": response_text,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+        save_chat_log(chat_log)
+else:
+    st.warning("AI 모델을 불러올 수 없습니다. `.streamlit/secrets.toml` 파일에 API 키를 올바르게 설정했는지 확인해주세요.")
