@@ -1,23 +1,77 @@
 import streamlit as st
+import time
+import os
+import json
+from PIL import Image, ImageDraw
 
-# --- 1. 페이지 기본 설정 ---
+# --- 이미지 생성 함수 ---
+def create_images_if_needed():
+    """필요한 이미지 파일이 없으면 생성합니다."""
+    image_dir = "images"
+    os.makedirs(image_dir, exist_ok=True)
+
+    # 이미지 정보: 파일명, 배경색, 텍스트, 텍스트 색
+    images_to_create = {
+        "litmus_red.png": ("#FF5733", "붉게 변함", "white"),
+        "litmus_blue.png": ("#335BFF", "푸르게 변함", "white"),
+        "phenol_colorless.png": ("#E0E0E0", "변화 없음", "black"),
+        "phenol_red.png": ("#FF33A1", "붉게 변함", "white"),
+    }
+
+    for filename, (color, text, text_color) in images_to_create.items():
+        filepath = os.path.join(image_dir, filename)
+        if not os.path.exists(filepath):
+            img = Image.new('RGB', (200, 200), color=color)
+            draw = ImageDraw.Draw(img)
+            # 중앙에 텍스트 추가 (폰트 미지정으로 기본 폰트 사용)
+            draw.text((50, 90), text, fill=text_color)
+            img.save(filepath)
+
+# --- 데이터 저장/로드 함수 ---
+RESULTS_FILE = "results.json"
+
+def load_results():
+    """JSON 파일에서 실험 결과를 불러옵니다."""
+    if os.path.exists(RESULTS_FILE):
+        with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"산성": [], "염기성": []}
+
+def save_results(results):
+    """실험 결과를 JSON 파일에 저장합니다."""
+    with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+# --- 1. 페이지 기본 설정 및 초기화 ---
 st.set_page_config(
     page_title="AI 산-염기 탐구 실험실",
     page_icon="🧪",
     layout="wide"
 )
 
+# 세션 상태 초기화
+if 'current_experiment' not in st.session_state:
+    st.session_state.current_experiment = None
+
+# 앱 실행 시 이미지 생성 함수 호출
+create_images_if_needed()
+
+# --- AI의 지식 데이터 (간단한 딕셔너리) ---
+SOLUTION_DATA = {
+    "레몬즙": "산성", "식초": "산성", "사이다": "산성", "탄산수": "산성", "염산": "산성",
+    "비눗물": "염기성", "치약": "염기성", "유리세정제": "염기성", "수산화나트륨": "염기성", "석회수": "염기성",
+    "물": "중성", "소금물": "중성"
+}
+
 # --- 2. 앱 제목 및 설명 ---
 st.title("🧪 AI 산-염기 탐구 실험실")
 st.markdown("### 궁금한 용액을 AI와 함께 탐구해보고 산성인지 염기성인지 알아봅시다!")
 
 # --- 3. 가상 실험실 화면 구성 ---
-st.markdown("---")
 st.header("🔬 활동: 가상 실험하기")
 
-# st.image("images/lab_background.png") # TODO: 나중에 실험실 배경 이미지를 추가할 수 있습니다.
-
 # 화면을 두 개로 분할 (왼쪽: 입력, 오른쪽: 결과)
+st.markdown("---")
 col1, col2 = st.columns([2, 1.5])
 
 with col1:
@@ -41,17 +95,84 @@ with col1:
 with col2:
     st.subheader("📊 실험 결과")
     
-    # '실험 시작' 버튼이 눌렸을 때
+    # 1. '실험 시작' 버튼을 눌렀을 때의 로직
     if start_button:
-        # 용액 이름이 입력되었는지 확인
         if not solution_name:
             st.warning("어떤 용액으로 실험할지 입력해주세요!")
         else:
-            # 지금은 실제 로직 대신 간단한 메시지만 보여줍니다.
-            st.info(f"'{solution_name}' 용액에 '{indicator}'(으)로 실험을 시작합니다!")
-            st.write("결과가 여기에 표시될 예정입니다.")
+            with st.spinner(f"'{solution_name}' 용액으로 실험 중... 잠시만 기다려주세요..."):
+                time.sleep(1.5) # 실험하는 것처럼 보이게 잠시 대기
             
-            # TODO: 다음 단계에서 AI를 연동하여 실제 결과를 보여줄 예정입니다.
+            # 현재 실험 정보를 세션 상태에 저장
+            st.session_state.current_experiment = {
+                "name": solution_name,
+                "indicator": indicator,
+                "property": SOLUTION_DATA.get(solution_name, "알 수 없음")
+            }
 
+    # 2. 세션 상태에 저장된 실험 정보가 있으면 결과 표시
+    if st.session_state.current_experiment:
+        exp = st.session_state.current_experiment
+        prop = exp["property"]
+        
+        st.success(f"'{exp['name']}' 실험 완료!")
+        
+        # 지시약과 용액 성질에 따라 결과 표시
+        if exp["indicator"] == "리트머스 종이":
+            if prop == "산성": st.image("images/litmus_red.png", caption="푸른색 리트머스 종이가 붉게 변했어요!")
+            elif prop == "염기성": st.image("images/litmus_blue.png", caption="붉은색 리트머스 종이가 푸르게 변했어요!")
+            elif prop == "중성": st.info("리트머스 종이의 색이 변하지 않았어요.")
+            else: st.error("처음 보는 용액이라 결과를 알 수 없어요! 😥")
+        
+        elif exp["indicator"] == "페놀프탈레인 용액":
+            if prop in ["산성", "중성"]: st.image("images/phenol_colorless.png", caption="페놀프탈레인 용액의 색이 변하지 않았어요.")
+            elif prop == "염기성": st.image("images/phenol_red.png", caption="페놀프탈레인 용액이 붉게 변했어요!")
+            else: st.error("처음 보는 용액이라 결과를 알 수 없어요! 😥")
+
+        # 3. 학생의 판단 입력받기
+        if prop != "알 수 없음":
+            st.markdown("---")
+            st.subheader("🤔 이 용액은 무엇일까요?")
+            
+            student_choice = st.radio(
+                "실험 결과를 보고 용액의 성질을 선택해주세요.",
+                ("산성", "염기성", "중성"), 
+                key=f"choice_{exp['name']}" # 용액마다 다른 키를 부여
+            )
+            
+            if st.button("결과 기록하기", key=f"submit_{exp['name']}"):
+                if student_choice == prop:
+                    st.success(f"정답이에요! '{exp['name']}'은(는) '{prop}'이 맞아요!")
+                    st.balloons()
+                    
+                    # 결과 저장
+                    results = load_results()
+                    if prop in results and exp['name'] not in results[prop]:
+                        results[prop].append(exp['name'])
+                        save_results(results)
+                        st.info("우리 반 실험 결과에 기록되었어요!")
+
+                else:
+                    st.error(f"아쉬워요. 이 용액은 '{prop}'이에요. 다시 한번 생각해볼까요?")
+                
+                # 현재 실험 초기화
+                st.session_state.current_experiment = None
+                time.sleep(2)
+                st.rerun() # 화면 새로고침
     else:
         st.info("왼쪽에서 실험할 용액을 입력하고 '실험 시작' 버튼을 눌러주세요.")
+
+# --- 4. 우리 반 전체 실험 결과 ---
+st.markdown("---")
+st.header("📊 우리 반 전체 실험 결과")
+
+results = load_results()
+
+res_col1, res_col2 = st.columns(2)
+with res_col1:
+    st.subheader("🔴 산성 용액")
+    st.dataframe(results["산성"], use_container_width=True)
+
+with res_col2:
+    st.subheader("🔵 염기성 용액")
+    st.dataframe(results["염기성"], use_container_width=True)
