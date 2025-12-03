@@ -90,10 +90,7 @@ st.title("🧪 AI 산-염기 탐구 실험실")
 st.markdown("### 궁금한 용액을 AI와 함께 탐구해보고 산성인지 염기성인지 알아봅시다!")
 
 # --- 3. 가상 실험실 화면 구성 ---
-st.header("🔬 활동: 가상 실험하기")
-
-# 화면을 두 개로 분할 (왼쪽: 입력, 오른쪽: 결과)
-st.markdown("---")
+st.header("🔬 활동 1: 가상 실험하기")
 col1, col2 = st.columns([2, 1.5])
 
 with col1:
@@ -173,7 +170,6 @@ with col2:
 
         # 3. 학생의 판단 입력받기
         if prop != "알 수 없음":
-            st.markdown("---")
             st.subheader("🤔 이 용액은 무엇일까요?")
             
             student_choice = st.radio(
@@ -205,8 +201,7 @@ with col2:
         st.info("왼쪽에서 실험할 용액을 입력하고 '실험 시작' 버튼을 눌러주세요.")
 
 # --- 4. 우리 반 전체 실험 결과 ---
-st.markdown("---")
-st.header("📊 우리 반 전체 실험 결과")
+st.header("📊 활동 2: 우리 반 전체 실험 결과")
 
 with st.expander("⚙️ 관리자 기능 (교사용)"):
     if st.button("⚠️ 모든 실험 결과 초기화하기"):
@@ -228,8 +223,7 @@ with res_col2:
     st.dataframe(results["염기성"], use_container_width=True)
 
 # --- 5. AI 과학자에게 질문하기 ---
-st.markdown("---")
-st.header("👩‍🔬 AI 과학자에게 질문하기")
+st.header("👩‍🔬 활동 3: AI 과학자에게 질문하기")
 
 if ai_model:
     # 이전 대화 내용 표시
